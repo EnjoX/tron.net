@@ -1,5 +1,7 @@
-﻿using Org.BouncyCastle.Asn1.Sec;
+﻿using Org.BouncyCastle.Asn1;
+using Org.BouncyCastle.Asn1.Sec;
 using Org.BouncyCastle.Asn1.X9;
+using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.Crypto.Generators;
 using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Math;
@@ -12,12 +14,14 @@ namespace Tron.Net.Crypto
     public class ECKey
     {
         private const string CurveName = "secp256k1";
+        private const string SignAlgorithmName = "SHA-256withECDSA";
 
         private static readonly ECDomainParameters Curve;
         private static readonly SecureRandom SecureRandom;
         private static readonly X9ECParameters Params;
 
         public ECPoint Pub { get; }
+        public ECPublicKeyParameters PublicKey { get; }
         private readonly ECPrivateKeyParameters _privateKey;
 
 
@@ -35,8 +39,10 @@ namespace Tron.Net.Crypto
             var generator = new ECKeyPairGenerator();
             generator.Init(new ECKeyGenerationParameters(parameters, SecureRandom));
             var pair = generator.GenerateKeyPair();
-            Pub = ((ECPublicKeyParameters)pair.Public).Q;
+            PublicKey = (ECPublicKeyParameters)pair.Public;
+            Pub = PublicKey.Q;
             _privateKey = (ECPrivateKeyParameters)pair.Private;
+
         }
 
 
@@ -44,7 +50,25 @@ namespace Tron.Net.Crypto
         {
             _privateKey = new ECPrivateKeyParameters(new BigInteger(privateKey.ToString()), Curve);
             Pub = publicPoint;
+            PublicKey = new ECPublicKeyParameters(publicPoint, Curve);
+        }
 
+        public byte[] SignTransaction(byte[] data)
+        {
+            ISigner signer = SignerUtilities.GetSigner(SignAlgorithmName);
+            signer.Init(true, _privateKey);
+            signer.BlockUpdate(data, 0, data.Length);
+            byte[] sigBytes = signer.GenerateSignature();
+
+            return sigBytes;
+        }
+
+        public bool VerifySignature(byte[] signature, byte[] data)
+        {
+            ISigner signer = SignerUtilities.GetSigner(SignAlgorithmName);
+            signer.Init(false, PublicKey);
+            signer.BlockUpdate(data, 0, data.Length);
+            return signer.VerifySignature(signature);
         }
 
         public static ECKey FromPrivate(BigInteger privKey)
